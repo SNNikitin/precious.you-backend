@@ -7,6 +7,7 @@ import { initDatabase, closeDatabase } from './db/index.ts';
 import { healthRoutes } from './routes/health.ts';
 import { authRoutes } from './routes/auth.ts';
 import { userRoutes } from './routes/user.ts';
+import { startPushScheduler, stopPushScheduler } from './scheduler/push-scheduler.ts';
 import type { JWTPayload } from './types/index.ts';
 
 declare module 'fastify' {
@@ -79,9 +80,16 @@ async function main(): Promise<void> {
     });
   });
 
+  // Start push scheduler
+  if (process.env['NODE_ENV'] !== 'test') {
+    startPushScheduler();
+    fastify.log.info('Push scheduler started');
+  }
+
   // Graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
     fastify.log.info(`Received ${signal}, shutting down...`);
+    stopPushScheduler();
     await fastify.close();
     closeDatabase();
     process.exit(0);
