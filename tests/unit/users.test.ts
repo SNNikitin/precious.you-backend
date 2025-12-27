@@ -1,13 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
-import { TEST_DB_PATH, TEST_DATA_DIR, cleanupTestDatabase } from '../setup.ts';
 
 let testDb: Database.Database;
 
 function createTestDatabase(): Database.Database {
-  mkdirSync(TEST_DATA_DIR, { recursive: true });
-  const db = new Database(TEST_DB_PATH);
+  const db = new Database(':memory:');
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
@@ -32,7 +29,6 @@ function createTestDatabase(): Database.Database {
 
 describe('Users Service', () => {
   beforeEach(() => {
-    cleanupTestDatabase();
     testDb = createTestDatabase();
   });
 
@@ -40,7 +36,6 @@ describe('Users Service', () => {
     if (testDb) {
       testDb.close();
     }
-    cleanupTestDatabase();
   });
 
   describe('createUser', () => {
