@@ -1,11 +1,28 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 
-let app: FastifyInstance;
+interface JwtPayload {
+  userId: string;
+  email: string;
+}
 
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: JwtPayload;
+    user: JwtPayload;
+  }
+}
+
+let app: FastifyInstance;
 
 // Simple in-memory user store for tests
 const users = new Map<string, Record<string, unknown>>();
@@ -17,7 +34,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   await fastify.register(cookie);
   await fastify.register(jwt, { secret: 'test-secret' });
 
-  fastify.decorate('authenticate', async function (request: any, reply: any) {
+  fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
     try {
       await request.jwtVerify();
     } catch {
@@ -77,9 +94,9 @@ async function buildTestApp(): Promise<FastifyInstance> {
   });
 
   fastify.get('/api/v1/auth/me', {
-    onRequest: [(fastify as any).authenticate],
+    onRequest: [fastify.authenticate],
   }, async (request, reply) => {
-    const { userId } = (request as any).user;
+    const { userId } = request.user;
     const user = users.get(userId);
 
     if (!user) {
@@ -95,9 +112,9 @@ async function buildTestApp(): Promise<FastifyInstance> {
   });
 
   fastify.put('/api/v1/me', {
-    onRequest: [(fastify as any).authenticate],
+    onRequest: [fastify.authenticate],
   }, async (request, reply) => {
-    const { userId } = (request as any).user;
+    const { userId } = request.user;
     const { display_name, gender } = request.body as { display_name?: string; gender?: string };
 
     const user = users.get(userId);
@@ -117,9 +134,9 @@ async function buildTestApp(): Promise<FastifyInstance> {
   });
 
   fastify.post('/api/v1/device', {
-    onRequest: [(fastify as any).authenticate],
+    onRequest: [fastify.authenticate],
   }, async (request, reply) => {
-    const { userId } = (request as any).user;
+    const { userId } = request.user;
     const { push_token } = request.body as { push_token: string };
 
     const user = users.get(userId);

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { TEST_DB_PATH, cleanupTestDatabase } from '../setup.ts';
+import { mkdirSync } from 'node:fs';
+import { TEST_DB_PATH, TEST_DATA_DIR, cleanupTestDatabase } from '../setup.ts';
 
 let testDb: Database.Database;
 
 function createTestDatabase(): Database.Database {
+  mkdirSync(TEST_DATA_DIR, { recursive: true });
   const db = new Database(TEST_DB_PATH);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
