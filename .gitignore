@@ -30,3 +30,4 @@ npm-debug.log*
 # Firebase service account
 *-firebase-adminsdk-*.json
 service-account.json
+.test-data

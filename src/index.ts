@@ -54,7 +54,7 @@ async function main(): Promise<void> {
   fastify.decorate('authenticate', async function (request, reply) {
     try {
       await request.jwtVerify();
-    } catch (err) {
+    } catch {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
   });
@@ -65,18 +65,20 @@ async function main(): Promise<void> {
   await fastify.register(userRoutes, { prefix: '/api/v1' });
 
   // Error handler
-  fastify.setErrorHandler((error, request, reply) => {
+  fastify.setErrorHandler((error, _request, reply) => {
     fastify.log.error(error);
 
-    if (error.name === 'ZodError') {
+    const err = error as Error & { statusCode?: number };
+
+    if (err.name === 'ZodError') {
       return reply.status(400).send({
         error: 'Validation error',
-        details: error.message,
+        details: err.message,
       });
     }
 
-    return reply.status(error.statusCode || 500).send({
-      error: error.message || 'Internal server error',
+    return reply.status(err.statusCode ?? 500).send({
+      error: err.message || 'Internal server error',
     });
   });
 

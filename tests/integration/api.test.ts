@@ -1,24 +1,28 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import Database from 'better-sqlite3';
-import { createTestDatabase, cleanupTestDatabase, TEST_DB_PATH } from '../setup.ts';
+
+interface JwtPayload {
+  userId: string;
+  email: string;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: JwtPayload;
+    user: JwtPayload;
+  }
+}
 
 let app: FastifyInstance;
-let testDb: Database.Database;
-
-// Mock the db module before importing routes
-const mockDb = {
-  prepare: (sql: string) => ({
-    get: (..._args: unknown[]) => null,
-    all: () => [],
-    run: (..._args: unknown[]) => ({ changes: 0 }),
-  }),
-  exec: (_sql: string) => {},
-  pragma: (_pragma: string) => {},
-};
 
 // Simple in-memory user store for tests
 const users = new Map<string, Record<string, unknown>>();
@@ -30,7 +34,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   await fastify.register(cookie);
   await fastify.register(jwt, { secret: 'test-secret' });
 
-  fastify.decorate('authenticate', async function (request: any, reply: any) {
+  fastify.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
     try {
       await request.jwtVerify();
     } catch {
@@ -90,9 +94,9 @@ async function buildTestApp(): Promise<FastifyInstance> {
   });
 
   fastify.get('/api/v1/auth/me', {
-    onRequest: [(fastify as any).authenticate],
+    onRequest: [fastify.authenticate],
   }, async (request, reply) => {
-    const { userId } = (request as any).user;
+    const { userId } = request.user;
     const user = users.get(userId);
 
     if (!user) {
@@ -108,9 +112,9 @@ async function buildTestApp(): Promise<FastifyInstance> {
   });
 
   fastify.put('/api/v1/me', {
-    onRequest: [(fastify as any).authenticate],
+    onRequest: [fastify.authenticate],
   }, async (request, reply) => {
-    const { userId } = (request as any).user;
+    const { userId } = request.user;
     const { display_name, gender } = request.body as { display_name?: string; gender?: string };
 
     const user = users.get(userId);
@@ -130,9 +134,9 @@ async function buildTestApp(): Promise<FastifyInstance> {
   });
 
   fastify.post('/api/v1/device', {
-    onRequest: [(fastify as any).authenticate],
+    onRequest: [fastify.authenticate],
   }, async (request, reply) => {
-    const { userId } = (request as any).user;
+    const { userId } = request.user;
     const { push_token } = request.body as { push_token: string };
 
     const user = users.get(userId);
@@ -150,16 +154,12 @@ async function buildTestApp(): Promise<FastifyInstance> {
 
 describe('API Integration Tests', () => {
   beforeAll(async () => {
-    cleanupTestDatabase();
-    testDb = createTestDatabase();
     app = await buildTestApp();
     await app.ready();
   });
 
   afterAll(async () => {
     await app.close();
-    testDb.close();
-    cleanupTestDatabase();
   });
 
   beforeEach(() => {

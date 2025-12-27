@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { db } from '../db/index.ts';
 import { sendPush } from '../services/push.ts';
 import { getRandomMessage, personalizeMessage } from '../data/messages.ts';
-import type { User, Gender } from '../types/index.ts';
+import type { Gender } from '../types/index.ts';
 
 interface UserForPush {
   id: string;
