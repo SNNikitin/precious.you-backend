@@ -1,40 +1,44 @@
-import { beforeAll, afterAll } from 'vitest';
+/**
+ * Setup файл - выполняется перед тестами в том же процессе
+ */
+import { mkdirSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-import { rmSync, mkdirSync, existsSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { execSync } from 'node:child_process';
+import { beforeAll, afterAll } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export const TEST_DATA_DIR = join(__dirname, '../.test-data');
-export const TEST_DB_PATH = join(TEST_DATA_DIR, 'test.db');
+const TEST_DIR = join(__dirname, '../.test-data');
+const TEST_DB = join(TEST_DIR, 'test.db');
 
-// Set test environment
+// Устанавливаем env ДО импорта любых модулей приложения
+process.env['DB_PATH'] = TEST_DB;
 process.env['NODE_ENV'] = 'test';
-process.env['DB_PATH'] = TEST_DB_PATH;
 process.env['JWT_SECRET'] = 'test-jwt-secret';
 process.env['JWT_REFRESH_SECRET'] = 'test-refresh-secret';
 
-export function cleanupTestDatabase(): void {
-  try {
-    if (existsSync(TEST_DB_PATH)) rmSync(TEST_DB_PATH, { force: true });
-    if (existsSync(`${TEST_DB_PATH}-wal`)) rmSync(`${TEST_DB_PATH}-wal`, { force: true });
-    if (existsSync(`${TEST_DB_PATH}-shm`)) rmSync(`${TEST_DB_PATH}-shm`, { force: true });
-  } catch {
-    // Ignore errors
-  }
-}
-
 beforeAll(() => {
-  mkdirSync(TEST_DATA_DIR, { recursive: true });
-  cleanupTestDatabase();
+  // Создаём директорию
+  mkdirSync(TEST_DIR, { recursive: true });
+
+  // Создаём базу через скрипт (Node 24 native TS)
+  execSync(`node --experimental-transform-types scripts/setup-db.ts "${TEST_DB}"`, {
+    cwd: join(__dirname, '..'),
+    stdio: 'pipe',
+  });
 });
 
 afterAll(() => {
-  cleanupTestDatabase();
-  try {
-    rmSync(TEST_DATA_DIR, { recursive: true, force: true });
-  } catch {
-    // Ignore
-  }
+  // Импортируем db только для закрытия
+  import('../src/db/index.ts').then(({ closeDatabase }) => {
+    closeDatabase();
+  }).catch(() => {});
+
+  // Чистим файлы
+  if (existsSync(TEST_DB)) rmSync(TEST_DB, { force: true });
+  if (existsSync(`${TEST_DB}-wal`)) rmSync(`${TEST_DB}-wal`, { force: true });
+  if (existsSync(`${TEST_DB}-shm`)) rmSync(`${TEST_DB}-shm`, { force: true });
 });

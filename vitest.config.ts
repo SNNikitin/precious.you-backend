@@ -13,5 +13,9 @@ export default defineConfig({
     },
     setupFiles: ['tests/setup.ts'],
     testTimeout: 10000,
+    // Последовательно, чтобы не было race conditions с базой
+    sequence: {
+      hooks: 'list',
+    },
   },
 });

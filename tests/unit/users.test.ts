@@ -1,240 +1,263 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
-
-let testDb: Database.Database;
-
-function createTestDatabase(): Database.Database {
-  const db = new Database(':memory:');
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      display_name TEXT NOT NULL,
-      gender TEXT DEFAULT 'female' CHECK (gender IN ('female', 'male', 'neutral')),
-      apple_id TEXT UNIQUE,
-      google_id TEXT UNIQUE,
-      avatar_url TEXT,
-      push_token TEXT,
-      push_enabled INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
-
-  return db;
-}
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  createUser,
+  findUserById,
+  findUserByEmail,
+  findUserByAppleId,
+  findUserByGoogleId,
+  updateUser,
+  linkAppleId,
+  linkGoogleId,
+  deleteUser,
+} from '../../src/services/users.ts';
+import { db } from '../../src/db/index.ts';
 
 describe('Users Service', () => {
   beforeEach(() => {
-    testDb = createTestDatabase();
-  });
-
-  afterEach(() => {
-    if (testDb) {
-      testDb.close();
-    }
+    db.exec('DELETE FROM users');
   });
 
   describe('createUser', () => {
-    it('should create a user with required fields', () => {
-      const stmt = testDb.prepare(`
-        INSERT INTO users (id, email, display_name, gender)
-        VALUES (?, ?, ?, ?)
-      `);
+    it('создаёт пользователя с обязательными полями', () => {
+      const user = createUser({
+        email: 'test@example.com',
+        display_name: 'Тест Юзер',
+      });
 
-      stmt.run('test-id-1', 'test@example.com', 'Test User', 'female');
-
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('test-id-1') as Record<string, unknown>;
-
-      expect(user).toBeDefined();
-      expect(user['email']).toBe('test@example.com');
-      expect(user['display_name']).toBe('Test User');
-      expect(user['gender']).toBe('female');
+      expect(user.id).toBeDefined();
+      expect(user.email).toBe('test@example.com');
+      expect(user.display_name).toBe('Тест Юзер');
+      expect(user.gender).toBe('female');
+      expect(user.created_at).toBeDefined();
     });
 
-    it('should set default gender to female', () => {
-      const stmt = testDb.prepare(`
-        INSERT INTO users (id, email, display_name)
-        VALUES (?, ?, ?)
-      `);
+    it('применяет кастомный gender', () => {
+      const user = createUser({
+        email: 'male@example.com',
+        display_name: 'Male User',
+        gender: 'male',
+      });
 
-      stmt.run('test-id-2', 'test2@example.com', 'Test User 2');
-
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('test-id-2') as Record<string, unknown>;
-
-      expect(user['gender']).toBe('female');
+      expect(user.gender).toBe('male');
     });
 
-    it('should enforce unique email', () => {
-      const stmt = testDb.prepare(`
-        INSERT INTO users (id, email, display_name)
-        VALUES (?, ?, ?)
-      `);
+    it('сохраняет apple_id при создании', () => {
+      const user = createUser({
+        email: 'apple@example.com',
+        display_name: 'Apple User',
+        apple_id: 'apple-sub-123',
+      });
 
-      stmt.run('test-id-3', 'unique@example.com', 'Test User 3');
+      expect(user.apple_id).toBe('apple-sub-123');
+
+      const fromDb = findUserById(user.id);
+      expect(fromDb?.apple_id).toBe('apple-sub-123');
+    });
+
+    it('сохраняет google_id при создании', () => {
+      const user = createUser({
+        email: 'google@example.com',
+        display_name: 'Google User',
+        google_id: 'google-sub-456',
+      });
+
+      expect(user.google_id).toBe('google-sub-456');
+    });
+
+    it('не даёт создать пользователя с дублирующим email', () => {
+      createUser({ email: 'unique@example.com', display_name: 'First' });
 
       expect(() => {
-        stmt.run('test-id-4', 'unique@example.com', 'Test User 4');
+        createUser({ email: 'unique@example.com', display_name: 'Second' });
       }).toThrow();
-    });
-
-    it('should allow null apple_id and google_id', () => {
-      const stmt = testDb.prepare(`
-        INSERT INTO users (id, email, display_name, apple_id, google_id)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-
-      stmt.run('test-id-5', 'test5@example.com', 'Test User 5', null, null);
-
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('test-id-5') as Record<string, unknown>;
-
-      expect(user['apple_id']).toBeNull();
-      expect(user['google_id']).toBeNull();
     });
   });
 
   describe('findUserByEmail', () => {
-    it('should find user by email', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name)
-        VALUES (?, ?, ?)
-      `).run('find-test-1', 'findme@example.com', 'Find Me');
+    it('находит существующего пользователя', () => {
+      createUser({ email: 'findme@example.com', display_name: 'Find Me' });
 
-      const user = testDb.prepare('SELECT * FROM users WHERE email = ?').get('findme@example.com') as Record<string, unknown>;
+      const found = findUserByEmail('findme@example.com');
 
-      expect(user).toBeDefined();
-      expect(user['id']).toBe('find-test-1');
+      expect(found).not.toBeNull();
+      expect(found?.display_name).toBe('Find Me');
     });
 
-    it('should return undefined for non-existent email', () => {
-      const user = testDb.prepare('SELECT * FROM users WHERE email = ?').get('nonexistent@example.com');
-      expect(user).toBeUndefined();
+    it('возвращает null для несуществующего email', () => {
+      const found = findUserByEmail('nobody@example.com');
+      expect(found).toBeNull();
     });
   });
 
   describe('findUserByAppleId', () => {
-    it('should find user by apple_id', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name, apple_id)
-        VALUES (?, ?, ?, ?)
-      `).run('apple-test-1', 'apple@example.com', 'Apple User', 'apple-sub-123');
+    it('находит пользователя по apple_id', () => {
+      const created = createUser({
+        email: 'apple-find@example.com',
+        display_name: 'Apple Find',
+        apple_id: 'find-apple-123',
+      });
 
-      const user = testDb.prepare('SELECT * FROM users WHERE apple_id = ?').get('apple-sub-123') as Record<string, unknown>;
+      const found = findUserByAppleId('find-apple-123');
 
-      expect(user).toBeDefined();
-      expect(user['id']).toBe('apple-test-1');
+      expect(found).not.toBeNull();
+      expect(found?.id).toBe(created.id);
     });
   });
 
   describe('findUserByGoogleId', () => {
-    it('should find user by google_id', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name, google_id)
-        VALUES (?, ?, ?, ?)
-      `).run('google-test-1', 'google@example.com', 'Google User', 'google-sub-456');
+    it('находит пользователя по google_id', () => {
+      const created = createUser({
+        email: 'google-find@example.com',
+        display_name: 'Google Find',
+        google_id: 'find-google-456',
+      });
 
-      const user = testDb.prepare('SELECT * FROM users WHERE google_id = ?').get('google-sub-456') as Record<string, unknown>;
+      const found = findUserByGoogleId('find-google-456');
 
-      expect(user).toBeDefined();
-      expect(user['id']).toBe('google-test-1');
+      expect(found).not.toBeNull();
+      expect(found?.id).toBe(created.id);
     });
   });
 
   describe('updateUser', () => {
-    it('should update display_name', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name)
-        VALUES (?, ?, ?)
-      `).run('update-test-1', 'update@example.com', 'Old Name');
+    it('обновляет display_name', () => {
+      const user = createUser({ email: 'update@example.com', display_name: 'Old Name' });
 
-      testDb.prepare(`
-        UPDATE users SET display_name = ? WHERE id = ?
-      `).run('New Name', 'update-test-1');
+      const updated = updateUser(user.id, { display_name: 'New Name' });
 
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('update-test-1') as Record<string, unknown>;
-
-      expect(user['display_name']).toBe('New Name');
+      expect(updated?.display_name).toBe('New Name');
+      expect(findUserById(user.id)?.display_name).toBe('New Name');
     });
 
-    it('should update gender', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name, gender)
-        VALUES (?, ?, ?, ?)
-      `).run('gender-test-1', 'gender@example.com', 'Gender User', 'female');
+    it('обновляет gender', () => {
+      const user = createUser({
+        email: 'gender-update@example.com',
+        display_name: 'Gender Test',
+        gender: 'female',
+      });
 
-      testDb.prepare(`
-        UPDATE users SET gender = ? WHERE id = ?
-      `).run('male', 'gender-test-1');
+      const updated = updateUser(user.id, { gender: 'neutral' });
 
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('gender-test-1') as Record<string, unknown>;
-
-      expect(user['gender']).toBe('male');
+      expect(updated?.gender).toBe('neutral');
     });
 
-    it('should update push_token and push_enabled', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name)
-        VALUES (?, ?, ?)
-      `).run('push-test-1', 'push@example.com', 'Push User');
+    it('обновляет push_token', () => {
+      const user = createUser({ email: 'push@example.com', display_name: 'Push User' });
 
-      testDb.prepare(`
-        UPDATE users SET push_token = ?, push_enabled = ? WHERE id = ?
-      `).run('fcm-token-123', 1, 'push-test-1');
+      const updated = updateUser(user.id, { push_token: 'fcm-token-xyz' });
 
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('push-test-1') as Record<string, unknown>;
+      expect(updated?.push_token).toBe('fcm-token-xyz');
+    });
 
-      expect(user['push_token']).toBe('fcm-token-123');
-      expect(user['push_enabled']).toBe(1);
+    it('обновляет push_enabled', () => {
+      const user = createUser({ email: 'push-enabled@example.com', display_name: 'Push Enabled' });
+
+      expect(user.push_enabled).toBe(true);
+
+      const updated = updateUser(user.id, { push_enabled: false });
+
+      expect(updated?.push_enabled).toBe(false);
+    });
+
+    it('обновляет несколько полей за раз', () => {
+      const user = createUser({
+        email: 'multi@example.com',
+        display_name: 'Multi',
+        gender: 'female',
+      });
+
+      const updated = updateUser(user.id, {
+        display_name: 'Updated Multi',
+        gender: 'male',
+        push_token: 'new-token',
+      });
+
+      expect(updated?.display_name).toBe('Updated Multi');
+      expect(updated?.gender).toBe('male');
+      expect(updated?.push_token).toBe('new-token');
+    });
+
+    it('возвращает null для несуществующего пользователя', () => {
+      const updated = updateUser('non-existent-id', { display_name: 'Test' });
+      expect(updated).toBeNull();
+    });
+  });
+
+  describe('linkAppleId', () => {
+    it('привязывает apple_id к существующему пользователю', () => {
+      const user = createUser({ email: 'link-apple@example.com', display_name: 'Link Apple' });
+
+      expect(user.apple_id).toBeNull();
+
+      linkAppleId(user.id, 'linked-apple-id');
+
+      expect(findUserById(user.id)?.apple_id).toBe('linked-apple-id');
+    });
+  });
+
+  describe('linkGoogleId', () => {
+    it('привязывает google_id к существующему пользователю', () => {
+      const user = createUser({ email: 'link-google@example.com', display_name: 'Link Google' });
+
+      expect(user.google_id).toBeNull();
+
+      linkGoogleId(user.id, 'linked-google-id');
+
+      expect(findUserById(user.id)?.google_id).toBe('linked-google-id');
     });
   });
 
   describe('deleteUser', () => {
-    it('should delete user', () => {
-      testDb.prepare(`
-        INSERT INTO users (id, email, display_name)
-        VALUES (?, ?, ?)
-      `).run('delete-test-1', 'delete@example.com', 'Delete Me');
+    it('удаляет существующего пользователя', () => {
+      const user = createUser({ email: 'delete@example.com', display_name: 'Delete Me' });
 
-      const result = testDb.prepare('DELETE FROM users WHERE id = ?').run('delete-test-1');
+      const deleted = deleteUser(user.id);
 
-      expect(result.changes).toBe(1);
-
-      const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get('delete-test-1');
-      expect(user).toBeUndefined();
+      expect(deleted).toBe(true);
+      expect(findUserById(user.id)).toBeNull();
     });
 
-    it('should return 0 changes for non-existent user', () => {
-      const result = testDb.prepare('DELETE FROM users WHERE id = ?').run('non-existent-id');
-      expect(result.changes).toBe(0);
+    it('возвращает false для несуществующего пользователя', () => {
+      const deleted = deleteUser('non-existent-id');
+      expect(deleted).toBe(false);
     });
   });
 
-  describe('gender validation', () => {
-    it('should accept valid genders', () => {
-      const validGenders = ['female', 'male', 'neutral'];
+  describe('полный флоу', () => {
+    it('регистрация через Apple -> обновление -> удаление', () => {
+      // Регистрация
+      const user = createUser({
+        email: 'flow-apple@example.com',
+        display_name: 'Flow Apple',
+        apple_id: 'flow-apple-sub',
+      });
 
-      for (const gender of validGenders) {
-        const id = `gender-valid-${gender}`;
-        testDb.prepare(`
-          INSERT INTO users (id, email, display_name, gender)
-          VALUES (?, ?, ?, ?)
-        `).run(id, `${gender}@example.com`, `${gender} User`, gender);
+      // Повторный логин через apple_id
+      const found = findUserByAppleId('flow-apple-sub');
+      expect(found?.id).toBe(user.id);
 
-        const user = testDb.prepare('SELECT * FROM users WHERE id = ?').get(id) as Record<string, unknown>;
-        expect(user['gender']).toBe(gender);
-      }
+      // Обновление профиля
+      updateUser(user.id, { display_name: 'Updated', gender: 'neutral', push_token: 'fcm' });
+
+      // Удаление
+      expect(deleteUser(user.id)).toBe(true);
+      expect(findUserByAppleId('flow-apple-sub')).toBeNull();
     });
 
-    it('should reject invalid gender', () => {
-      expect(() => {
-        testDb.prepare(`
-          INSERT INTO users (id, email, display_name, gender)
-          VALUES (?, ?, ?, ?)
-        `).run('invalid-gender-1', 'invalid@example.com', 'Invalid User', 'invalid');
-      }).toThrow();
+    it('регистрация через Google -> привязка Apple', () => {
+      const user = createUser({
+        email: 'flow-google@example.com',
+        display_name: 'Flow Google',
+        google_id: 'flow-google-sub',
+      });
+
+      expect(user.apple_id).toBeNull();
+
+      linkAppleId(user.id, 'flow-apple-later');
+
+      // Теперь можно найти по обоим провайдерам
+      expect(findUserByGoogleId('flow-google-sub')?.id).toBe(user.id);
+      expect(findUserByAppleId('flow-apple-later')?.id).toBe(user.id);
     });
   });
 });
