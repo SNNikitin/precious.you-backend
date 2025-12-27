@@ -3,22 +3,9 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
-import Database from 'better-sqlite3';
-import { createTestDatabase, cleanupTestDatabase, TEST_DB_PATH } from '../setup.ts';
 
 let app: FastifyInstance;
-let testDb: Database.Database;
 
-// Mock the db module before importing routes
-const mockDb = {
-  prepare: (sql: string) => ({
-    get: (..._args: unknown[]) => null,
-    all: () => [],
-    run: (..._args: unknown[]) => ({ changes: 0 }),
-  }),
-  exec: (_sql: string) => {},
-  pragma: (_pragma: string) => {},
-};
 
 // Simple in-memory user store for tests
 const users = new Map<string, Record<string, unknown>>();
@@ -150,16 +137,12 @@ async function buildTestApp(): Promise<FastifyInstance> {
 
 describe('API Integration Tests', () => {
   beforeAll(async () => {
-    cleanupTestDatabase();
-    testDb = createTestDatabase();
     app = await buildTestApp();
     await app.ready();
   });
 
   afterAll(async () => {
     await app.close();
-    testDb.close();
-    cleanupTestDatabase();
   });
 
   beforeEach(() => {

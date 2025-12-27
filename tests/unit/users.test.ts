@@ -1,9 +1,32 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { createTestDatabase, cleanupTestDatabase, TEST_DB_PATH } from '../setup.ts';
+import { TEST_DB_PATH, cleanupTestDatabase } from '../setup.ts';
 
-// We need to mock the db module
 let testDb: Database.Database;
+
+function createTestDatabase(): Database.Database {
+  const db = new Database(TEST_DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL,
+      gender TEXT DEFAULT 'female' CHECK (gender IN ('female', 'male', 'neutral')),
+      apple_id TEXT UNIQUE,
+      google_id TEXT UNIQUE,
+      avatar_url TEXT,
+      push_token TEXT,
+      push_enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  return db;
+}
 
 describe('Users Service', () => {
   beforeEach(() => {
@@ -12,7 +35,9 @@ describe('Users Service', () => {
   });
 
   afterEach(() => {
-    testDb.close();
+    if (testDb) {
+      testDb.close();
+    }
     cleanupTestDatabase();
   });
 
