@@ -10,11 +10,8 @@
     "dev": "node --watch --experimental-transform-types src/index.ts",
     "start": "node --experimental-transform-types src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint src tests --ext .ts",
-    "lint:fix": "eslint src tests --ext .ts --fix"
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
@@ -31,10 +28,8 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
-    "@vitest/coverage-v8": "^2.1.0",
     "eslint": "^9.0.0",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.0.0",
-    "vitest": "^2.1.0"
+    "typescript-eslint": "^8.0.0"
   }
 }
