@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
-    "@fastify/cors": "^10.0.0",
+    "@fastify/cors": "^11.2.0",
     "@fastify/jwt": "^10.0.0",
     "apple-signin-auth": "^2.0.0",
     "better-sqlite3": "^12.5.0",
